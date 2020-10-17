@@ -1,7 +1,9 @@
 #ifndef LOGTEST_HPP
 #define LOGTEST_HPP
 
-#include <atomic>
+#include "spinlock.hpp"
+#include "thread_map.hpp"
+
 #include <thread>
 #include <queue>
 #include <cstdio>
@@ -13,10 +15,14 @@
 class logtest
 {
 	public:
-	logtest(FILE * where) :
+	logtest(FILE * where, const char * loop_th_name, const thread_map& tm) :
 		_where(where)
 	{
-		_thread_start();
+		_log_thread = std::thread{&logtest::_log_thread_loop,
+			this,
+			loop_th_name,
+			tm
+		};
 	}
 	
 	~logtest()
@@ -29,7 +35,7 @@ class logtest
 		NONE = 0, CSTRING, DOUBLE, INT, CHAR
 	};	
 	
-	public:
+	
 	struct log_item {
 		union log_item_u {
 			char * str;
@@ -40,6 +46,7 @@ class logtest
 		log_item_type tag;
 	};
 	
+	public:
 	inline log_item make_item_cstr(const char * reachable)
 	{
 		log_item item;
@@ -78,59 +85,8 @@ class logtest
 		_msg_q.push(item);
 		_qlock.unlock();
 	}
-		
-	private:
 	
-#ifdef TRASH_CACHE
-	// see https://www.boost.org/doc/libs/1_56_0/boost/smart_ptr/detail/spinlock_std_atomic.hpp
-	// see https://gist.github.com/vertextao/9a9077720c15fec89ed1f3fd91c9e91a
-	class spinlock
-	{
-		public:
-			spinlock() { m_lock.clear(); }
-			spinlock(const spinlock&) = delete;
-			~spinlock() = default;
-
-			void lock()
-			{
-				while (m_lock.test_and_set(std::memory_order_acquire));
-			}
-			void unlock()
-			{
-				m_lock.clear(std::memory_order_release);
-			}
-		private:
-			std::atomic_flag m_lock;
-	};
-#else
-	class spinlock
-	{
-		// see https://rigtorp.se/spinlock/
-		public:
-		spinlock() : _lock(false) {}
-		
-		void lock()
-		{
-			for (;;)
-			{
-				// try to acquire once
-				if (!_lock.exchange(true, std::memory_order_acquire))
-					break;
-				
-				// spin on a read operation -> no cache trashing
-				while (_lock.load(std::memory_order_relaxed))
-					continue;
-			}
-		}
-	  
-		void unlock()
-		{_lock.store(false, std::memory_order_release);}
-		
-		private:
-		std::atomic<bool> _lock; // should check is_lock_free()
-	};
-#endif
-
+	private:
 	void _terminate()
 	{
 		bool wait = true;
@@ -148,10 +104,25 @@ class logtest
 		_log_thread.join();
 	}
 	
-	void _log_thread_loop()
+	void _log_bad_map(const char * name)
 	{
-		auto start = std::chrono::steady_clock::now();
+		enq_log_item(
+			make_item_cstr("logger warning: can't map logger thread ")
+		);
+		enq_log_item(make_item_cstr(name));
+		enq_log_item(make_item_char('\n'));
+	}
+	
+	void _log_thread_loop(const char * my_name, const thread_map& tmap)
+	{
+		if (!tmap.map_thread(my_name))
+			_log_bad_map(my_name);
 		
+		// check on core numbers and thread names
+		//while (true)
+		//	sleep(1);
+		
+		auto start = std::chrono::steady_clock::now();
 		_work = true;
 		while (_work)
 		{
@@ -190,7 +161,7 @@ class logtest
 					break;
 			}
 			
-			if (q_size == 1 || !q_size)
+			if (!q_size || q_size == 1)
 				usleep(5*1000);
 		}
 		
@@ -215,11 +186,6 @@ class logtest
 		std::clog << "logger time   : " << mills.count()
 			<< " millis" << std::endl;
 		std::clog << std::endl;
-	}
-	
-	void _thread_start()
-	{
-		_log_thread = std::thread{&logtest::_log_thread_loop, this};
 	}
 	
 	std::thread _log_thread;
