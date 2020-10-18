@@ -4,6 +4,7 @@ to another thread.
 Uses spin locks. With -D TRASH_CACHE you use the inferior one (more or less the
 same like in boost). With -D READ_EXCH you use the faster one, but load before
 you exchange. Supposedly has better cache performance. Should measure, though.
+-D REPORT_QSIZE reports the queue size to stdout on each logger loop iteration.
 
 Use: ./prog <how-many-loops> <core-main-thread> <core-logger-thread>
 

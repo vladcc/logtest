@@ -1,11 +1,11 @@
 #ifndef LOGTEST_HPP
 #define LOGTEST_HPP
 
-#include "spinlock.hpp"
+
 #include "thread_map.hpp"
+#include "spin_queue.hpp"
 
 #include <thread>
-#include <queue>
 #include <cstdio>
 #include <chrono>
 #include <iostream>
@@ -79,25 +79,28 @@ class logtest
 		return item;
 	}
 	
-	void enq_log_item(const log_item& item)
-	{
-		_qlock.lock();
-		_msg_q.push(item);
-		_qlock.unlock();
-	}
+	inline void enq_log_item(const log_item& item)
+	{_msg_q.enque(item);}
 	
 	private:
+	
+	inline void _sleep_little()
+	{
+		// while (1) usleep(1); results in ~10% cpu
+		usleep(1);
+	}
+	
+	inline void _sleep_more()
+	{usleep(1000);}
+	
 	void _terminate()
 	{
 		bool wait = true;
 		while (wait)
 		{
-			_qlock.lock();
-			wait = !_msg_q.empty();
-			_qlock.unlock();
-			
+			wait = _msg_q.size();			
 			if (wait)
-				usleep(7*1000);
+				_sleep_more();
 		}
 	
 		_work = false;
@@ -113,6 +116,13 @@ class logtest
 		enq_log_item(make_item_char('\n'));
 	}
 	
+	inline log_item _log_item_init()
+	{
+		log_item li = {};
+		li.tag = NONE;
+		return li;
+	}
+		
 	void _log_thread_loop(const char * my_name, const thread_map& tmap)
 	{
 		if (!tmap.map_thread(my_name))
@@ -123,46 +133,48 @@ class logtest
 		//	sleep(1);
 		
 		auto start = std::chrono::steady_clock::now();
+		
 		_work = true;
 		while (_work)
 		{
-			size_t q_size = 0;
-			log_item item = {};
-			item.tag = NONE;
+			log_item item = _log_item_init();
+			size_t q_size = _msg_q.deque(item);
 			
-			_qlock.lock();
-			if ((q_size = _msg_q.size()))
+#ifdef REPORT_QSIZE
+	fprintf(_where, "queue size: %zu\n", q_size);
+#endif			
+			
+			if (q_size)
 			{
-				item = _msg_q.front();
-				_msg_q.pop();
+				switch (item.tag)
+				{
+					case NONE: // should never come here
+						break;
+					case CSTRING:
+						fputs(item.u_item.str, _where);
+						break;
+					case DOUBLE:
+						fprintf(_where, "%.2f", item.u_item.dbl);
+						break;
+					case INT:
+						fprintf(_where, "%d", item.u_item.integ);
+						break;
+					case CHAR:
+						fputc(item.u_item.ch, _where);
+						break;
+					default: // should never come here either
+						fprintf(stderr, "!!! item tag error; tag = %d !!!\n",
+							item.tag
+						);
+						break;
+				}
+				
+				
+				if (1 == q_size)
+					_sleep_little();
 			}
-			_qlock.unlock();
-			
-			switch (item.tag)
-			{
-				case NONE:
-					break;
-				case CSTRING:
-					fputs(item.u_item.str, _where);
-					break;
-				case DOUBLE:
-					fprintf(_where, "%.2f", item.u_item.dbl);
-					break;
-				case INT:
-					fprintf(_where, "%d", item.u_item.integ);
-					break;
-				case CHAR:
-					fputc(item.u_item.ch, _where);
-					break;
-				default:
-					fprintf(stderr, "!!! item tag error; tag = %d !!!\n",
-						item.tag
-					);
-					break;
-			}
-			
-			if (!q_size || q_size == 1)
-				usleep(5*1000);
+			else
+				_sleep_little();
 		}
 		
 		auto end = std::chrono::steady_clock::now();
@@ -189,7 +201,7 @@ class logtest
 	}
 	
 	std::thread _log_thread;
-	std::queue<log_item> _msg_q;
+	spin_queue<log_item> _msg_q;
 	FILE * _where;
 	spinlock _qlock;
 	bool _work;

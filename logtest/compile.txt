@@ -1,3 +1,4 @@
 g++ main.cpp -o main.bin.notrash -lpthread -Wall -O3
 g++ -DTRASH_CACHE  main.cpp -o main.bin.trash -lpthread -Wall -O3
 g++ -DREAD_EXCH main.cpp -o main.bin.notrash_readexch -lpthread -Wall -O3
+g++ -DREPORT_QSIZE main.cpp -o main.bin.report_qsize -lpthread -Wall -O3
