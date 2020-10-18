@@ -146,6 +146,7 @@ class logtest
 			
 			if (q_size)
 			{
+				// note: ideal would probably be os async io instead of stdio
 				switch (item.tag)
 				{
 					case NONE: // should never come here

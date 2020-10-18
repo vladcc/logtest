@@ -42,6 +42,7 @@ class spin_queue
 	}
 	
 	private:
+	
 	// some pool allocator would be nice; boost?
 	std::queue<T> _queue;
 	spinlock _lock;

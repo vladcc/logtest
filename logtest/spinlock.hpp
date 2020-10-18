@@ -3,13 +3,17 @@
 
 #include <atomic>
 
+static_assert(std::atomic<bool>::is_always_lock_free);
+
 #ifdef TRASH_CACHE
 	// see https://www.boost.org/doc/libs/1_56_0/boost/smart_ptr/detail/spinlock_std_atomic.hpp
 	// see https://gist.github.com/vertextao/9a9077720c15fec89ed1f3fd91c9e91a
 	class spinlock
 	{
 		public:
-			spinlock() { m_lock.clear(); }
+			spinlock()
+			{m_lock.clear();}
+			
 			spinlock(const spinlock&) = delete;
 			~spinlock() = default;
 
@@ -23,6 +27,20 @@
 			}
 		private:
 			std::atomic_flag m_lock;
+	};
+#elif defined(MUTEX)
+#include <mutex>
+
+	class spinlock // the spinlock is a lie
+	{
+		public:
+			inline void lock()
+			{_mtx.lock();}
+			
+			inline void unlock()
+			{_mtx.unlock();}
+		private:
+			std::mutex _mtx;
 	};
 #else
 	class spinlock
